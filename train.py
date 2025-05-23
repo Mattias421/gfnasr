@@ -31,6 +31,7 @@ from speechbrain.utils.distributed import if_main_process, run_on_main
 from speechbrain.utils.logger import get_logger
 
 from dataset import HDF5Dataset
+from utils import get_sclite_wer
 
 logger = get_logger(__name__)
 
@@ -104,11 +105,20 @@ class ASR(sb.Brain):
         else:
             if epoch is not None:
                 hyps_file = Path(self.hparams.output_folder) / "valid_hyps_{epoch}.trn"
+                with open(hyps_file, 'w') as f:
+                    f.writelines(self.hypothesis)
+
+                stage_stats["WER"] = get_sclite_wer(Path("./data/valid.trn"), hyps_file)
+                stage_stats["CER"] = get_sclite_wer(Path("./data/valid.trn"), hyps_file, cer=True)
+
             else:
                 hyps_file = Path(self.hparams.output_folder) / "test_hyps.trn"
 
-            with open(hyps_file, 'w') as f:
-                f.writelines(self.hypothesis)
+                with open(hyps_file, 'w') as f:
+                    f.writelines(self.hypothesis)
+
+                stage_stats["WER"] = get_sclite_wer(Path("./data/test.trn"), hyps_file)
+                stage_stats["CER"] = get_sclite_wer(Path("./data/test.trn"), hyps_file, cer=True)
 
         # Perform end-of-iteration things, like annealing, logging, etc.
         if stage == sb.Stage.VALID:
