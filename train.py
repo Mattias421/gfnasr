@@ -46,10 +46,10 @@ class ASR(sb.Brain):
         hyps = None
         if stage == sb.Stage.VALID:
             hyps, _, _, _ = self.hparams.valid_search(
-                embeds, wav_lens
+                    embeds, wav_lens / wav_lens.max()
             )
         elif stage == sb.Stage.TEST:
-            hyps, _, _, _ = self.hparams.test_search(embeds, wav_lens)
+            hyps, _, _, _ = self.hparams.policy(embeds, wav_lens / wav_lens.max())
 
         return hyps, utt_id
 
