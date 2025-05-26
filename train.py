@@ -43,22 +43,23 @@ class ASR(sb.Brain):
         embeds, utt_id, wav_lens = batch
         embeds = embeds.to(self.device)
 
-        hyps = None
-        if stage == sb.Stage.VALID:
-            hyps, _, _, _ = self.hparams.valid_search(
-                    embeds, wav_lens / wav_lens.max()
-            )
-        elif stage == sb.Stage.TEST:
-            hyps, _, _, _ = self.hparams.policy(embeds, wav_lens / wav_lens.max())
+        skip_reward = (stage == sb.Stage.TEST)
 
-        return hyps, utt_id
+        state, log_probs, log_probs_term, log_reward, log_reward_unpenalized = self.hparams.policy(embeds, wav_lens / wav_lens.max(), skip_reward=skip_reward)
+
+
+        return utt_id, state, log_probs, log_probs_term, log_reward, log_reward_unpenalized
 
 
 
     def compute_objectives(self, predictions, batch, stage):
         """Computes the loss NLL given predictions and targets."""
 
-        (hyps, utt_id) = predictions
+        (utt_id, state, log_probs, log_probs_term, log_reward, log_reward_unpenalized) = predictions
+
+        eos_index = self.hparams.policy.eos_index
+        loss = self.hparams.loss_fn(log_probs, log_reward, log_probs_term, state, eos_index)
+        print(loss)
 
         if stage != sb.Stage.TRAIN:
             # tokens, tokens_lens = batch.tokens
@@ -66,7 +67,7 @@ class ASR(sb.Brain):
             # Decode token terms to words
             predicted_words = [
                 self.tokenizer.decode(t, skip_special_tokens=True).strip()
-                for t in hyps
+                for t in state
             ]
 
             # Convert indices to words
@@ -87,9 +88,7 @@ class ASR(sb.Brain):
             for pred, i in zip(predicted_words, utt_id):
                 self.hypothesis.append(f"{pred} ({i})\n")
 
-
-        
-        return torch.tensor([0])
+        return loss
 
     def on_stage_start(self, stage, epoch):
         """Gets called at the beginning of each epoch"""
@@ -193,13 +192,13 @@ if __name__ == "__main__":
     asr_brain.tokenizer = tokenizer
 
     # Training
-    # asr_brain.fit(
-    #     asr_brain.hparams.epoch_counter,
-    #     train_data,
-    #     valid_data,
-    #     train_loader_kwargs=hparams["train_loader_kwargs"],
-    #     valid_loader_kwargs=hparams["valid_loader_kwargs"],
-    # )
+    asr_brain.fit(
+        asr_brain.hparams.epoch_counter,
+        train_data,
+        valid_data,
+        train_loader_kwargs=hparams["train_loader_kwargs"],
+        valid_loader_kwargs=hparams["valid_loader_kwargs"],
+    )
 
     # Testing
     os.makedirs(hparams["output_wer_folder"], exist_ok=True)

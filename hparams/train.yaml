@@ -40,7 +40,7 @@ sampling_rate: 16_000
 # With DDP batch_size is multiplied by N jobs
 # This setup works well with 1x 32GB GPU
 batch_size: 2
-test_batch_size: 1
+test_batch_size: 2
 grad_accumulation_factor: 8
 
 # Decoding parameters
@@ -98,9 +98,12 @@ whisper_opt_class: !name:torch.optim.AdamW
 
 policy: !new:utils.GFNPolicy
     model: !ref <whisper>
+    reward_model: !ref <whisper_pretrained>
     min_decode_ratio: !ref <min_decode_ratio>
     max_decode_ratio: !ref <max_decode_ratio>
     temperature: 1.0
+
+loss_fn: !name:utils.modified_subtb_loss
 
 # valid_search: !new:speechbrain.decoders.seq2seq.S2SWhisperGreedySearcher
 #     model: !ref <whisper>
