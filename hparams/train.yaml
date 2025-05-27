@@ -7,10 +7,10 @@
 # Seed needs to be set at top of yaml, before objects with parameters are made
 seed: 1986
 __set_seed: !apply:speechbrain.utils.seed_everything [!ref <seed>]
-output_folder: !ref results/whisper/<seed>
+trial_id: default
+output_folder: !ref results/<trial_id>
 output_wer_folder: !ref <output_folder>/
 save_folder: !ref <output_folder>/save
-train_log: !ref <output_folder>/train_log.txt
 
 # URL for the whisper model
 whisper_hub: openai/whisper-tiny
@@ -104,17 +104,7 @@ policy: !new:utils.GFNPolicy
     temperature: 1.0
 
 loss_fn: !name:utils.modified_subtb_loss
-
-# valid_search: !new:speechbrain.decoders.seq2seq.S2SWhisperGreedySearcher
-#     model: !ref <whisper>
-#     min_decode_ratio: !ref <min_decode_ratio>
-#     max_decode_ratio: !ref <max_decode_ratio>
-#
-# test_search: !new:speechbrain.decoders.seq2seq.S2SWhisperBeamSearcher
-#     module: [!ref <whisper>]
-#     min_decode_ratio: !ref <min_decode_ratio>
-#     max_decode_ratio: !ref <max_decode_ratio>
-#     beam_size: !ref <test_beam_size>
+reward_temperature: 1.0
 
 lr_annealing_whisper: !new:speechbrain.nnet.schedulers.NoamScheduler
     lr_initial: !ref <lr_whisper>
@@ -129,10 +119,20 @@ checkpointer: !new:speechbrain.utils.checkpoints.Checkpointer
         scheduler_whisper: !ref <lr_annealing_whisper>
         counter: !ref <epoch_counter>
 
-train_logger: !new:speechbrain.utils.train_logger.FileTrainLogger
-    save_file: !ref <train_log>
+train_logger: !new:speechbrain.utils.train_logger.WandBLogger
+    initializer: !name:wandb.init
+        project: GFNASR
+        name: !ref <trial_id>
+        dir: !ref <output_folder>/wandb
+        config:
+            reward_temperature: !ref <reward_temperature>
+            lr_whisper: !ref <lr_whisper>
+            batch_size: !ref <batch_size>
+            weight_decay: !ref <weight_decay>
+            lora_rank: !ref <lora_rank>
 
-error_rate_computer: !name:speechbrain.utils.metric_stats.ErrorRateStats
 
-cer_computer: !name:speechbrain.utils.metric_stats.ErrorRateStats
+wer_metric: !new:speechbrain.utils.metric_stats.ErrorRateStats
+
+cer_metric: !new:speechbrain.utils.metric_stats.ErrorRateStats
     split_tokens: True

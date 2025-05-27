@@ -31,19 +31,17 @@ from speechbrain.utils.distributed import if_main_process, run_on_main
 from speechbrain.utils.logger import get_logger
 
 from dataset import HDF5Dataset
-from utils import get_sclite_wer
 
 logger = get_logger(__name__)
-
 
 # Define training procedure
 class ASR(sb.Brain):
     def compute_forward(self, batch, stage):
         """Forward computations from the waveform batches to the output probabilities."""
-        embeds, utt_id, wav_lens = batch
+        embeds, utt_id, wav_lens, refs = batch
         embeds = embeds.to(self.device)
 
-        skip_reward = (stage == sb.Stage.TEST)
+        skip_reward = False # (stage == sb.Stage.TEST)
 
         state, log_probs, log_probs_term, log_reward, log_reward_unpenalized = self.hparams.policy(embeds, wav_lens / wav_lens.max(), skip_reward=skip_reward)
 
@@ -58,12 +56,10 @@ class ASR(sb.Brain):
         (utt_id, state, log_probs, log_probs_term, log_reward, log_reward_unpenalized) = predictions
 
         eos_index = self.hparams.policy.eos_index
+        log_reward *= 1 / self.hparams.reward_temperature
         loss = self.hparams.loss_fn(log_probs, log_reward, log_probs_term, state, eos_index)
-        print(loss)
 
         if stage != sb.Stage.TRAIN:
-            # tokens, tokens_lens = batch.tokens
-
             # Decode token terms to words
             predicted_words = [
                 self.tokenizer.decode(t, skip_special_tokens=True).strip()
@@ -71,6 +67,8 @@ class ASR(sb.Brain):
             ]
 
             # Convert indices to words
+            _, _, _, target_words = batch
+
             if hasattr(self.hparams, "normalized_transcripts"):
 
                 if hasattr(self.tokenizer, "normalize"):
@@ -79,14 +77,22 @@ class ASR(sb.Brain):
                     normalized_fn = self.tokenizer._normalize
 
                 predicted_words = [
-                        normalized_fn(text).upper() for text in predicted_words
+                    normalized_fn(text).split(" ") for text in predicted_words
                 ]
 
+                target_words = [
+                    normalized_fn(text).split(" ") for text in target_words
+                ]
             else:
-                predicted_words = [text for text in predicted_words]
+                predicted_words = [text.split(" ") for text in predicted_words]
+                target_words = [text.split(" ") for text in target_words]
+
+            self.hparams.wer_metric.append(ids=utt_id, predict=predicted_words, target=target_words)
+            self.hparams.cer_metric.append(ids=utt_id, predict=predicted_words, target=target_words)
+
 
             for pred, i in zip(predicted_words, utt_id):
-                self.hypothesis.append(f"{pred} ({i})\n")
+                self.hypothesis.append(f"{' '.join(pred).upper()} ({i})\n")
 
         return loss
 
@@ -103,21 +109,18 @@ class ASR(sb.Brain):
             self.train_stats = stage_stats
         else:
             if epoch is not None:
-                hyps_file = Path(self.hparams.output_folder) / "valid_hyps_{epoch}.trn"
-                with open(hyps_file, 'w') as f:
-                    f.writelines(self.hypothesis)
-
-                stage_stats["WER"] = get_sclite_wer(Path("./data/valid.trn"), hyps_file)
-                stage_stats["CER"] = get_sclite_wer(Path("./data/valid.trn"), hyps_file, cer=True)
-
+                hyps_file = Path(self.hparams.output_folder) / f"valid_hyps_{epoch}.trn"
             else:
                 hyps_file = Path(self.hparams.output_folder) / "test_hyps.trn"
 
+            if if_main_process():
                 with open(hyps_file, 'w') as f:
                     f.writelines(self.hypothesis)
 
-                stage_stats["WER"] = get_sclite_wer(Path("./data/test.trn"), hyps_file)
-                stage_stats["CER"] = get_sclite_wer(Path("./data/test.trn"), hyps_file, cer=True)
+            stage_stats["WER"] = self.hparams.wer_metric.summarize("error_rate")
+            stage_stats["CER"] = self.hparams.cer_metric.summarize("error_rate")
+            self.hparams.wer_metric.clear()
+            self.hparams.cer_metric.clear()
 
         # Perform end-of-iteration things, like annealing, logging, etc.
         if stage == sb.Stage.VALID:
@@ -137,10 +140,11 @@ class ASR(sb.Brain):
                 test_stats=stage_stats,
             )
             if if_main_process():
+                file = Path(self.hparams.output_folder) / "test_wer.txt"
                 with open(
-                    self.hparams.test_wer_file, "w", encoding="utf-8"
+                        file, "w", encoding="utf-8"
                 ) as w:
-                    self.wer_metric.write_stats(w)
+                    self.hparams.wer_metric.write_stats(w)
 
 
 

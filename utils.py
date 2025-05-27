@@ -7,62 +7,6 @@ from speechbrain.utils.data_utils import undo_padding
 from speechbrain.decoders.utils import (
         _update_mem)
 
-def get_sclite_wer(ref_trn_path, hyp_trn_path, cer=False):
-    """
-    Runs sclite to calculate WER and extracts only the WER percentage.
-
-    Args:
-        ref_trn_path (str): Path to the reference .trn file.
-        hyp_trn_path (str): Path to the hypothesis .trn file.
-
-    Returns:
-        float: The Word Error Rate (WER) as a percentage, or None if an error occurs
-               or WER cannot be parsed.
-    """
-    sclite_command_parts = [
-        "sclite",
-        "-r", ref_trn_path,
-        "-h", hyp_trn_path,
-        "-i", "spu_id",
-        "-o", "sum", "stdout" # 'pralign' or other report types can be added if needed by sclite
-                              # but for just getting WER from summary, 'sum stdout' is often enough.
-    ]
-
-    if cer:
-        sclite_command_parts.append("-c")
-
-    pipeline_command = (
-        f"{' '.join(sclite_command_parts)} "
-        f"| grep 'Sum/Avg' " # This grep might need to be more specific, e.g., grep '^| Sum/Avg'
-        f"| awk '{{print $10}}'" # Using $10 as per your original script.
-                               # Note the double curly braces for awk in an f-string.
-    )
-
-    try:
-        result = subprocess.run(pipeline_command, shell=True, capture_output=True, text=True, check=True)
-
-        # stdout will contain the output of the last command in the pipe (awk)
-        wer_str = result.stdout.strip()
-
-        if wer_str:
-            return float(wer_str)
-        else:
-            print("Warning: WER string is empty. sclite output might not have matched.")
-            print("sclite stderr:", result.stderr)
-            return None
-
-    except subprocess.CalledProcessError as e:
-        # This exception is raised if the command returns a non-zero exit code
-        print(f"Error running sclite pipeline: {e}")
-        return None
-    except FileNotFoundError:
-        print("Error: sclite command not found. Is it in your PATH?")
-        return None
-    except ValueError:
-        print(f"Error: Could not convert extracted WER '{wer_str}' to float.")
-        return None
-
-
 def modified_subtb_loss(
     log_pf,
     log_r,
@@ -81,8 +25,6 @@ def modified_subtb_loss(
         log_pf.shape[1] > 1
     )  # With modified-style losses, we need at least one transition before terminating
 
-    breakpoint()
-
     delta = (
         log_r[:, :-1]
         + log_pf[:, :-1]
@@ -93,7 +35,7 @@ def modified_subtb_loss(
     delta_cumsum = torch.cat([torch.zeros_like(delta[:, :1]), delta], 1).cumsum(1)
 
     # Get a mask for tokens after the termination token in the generated_text
-    mask = (generated_text[:, :] == termination_token_id).cumsum(-1) >= 1
+    mask = (generated_text[:, :-1] == termination_token_id).cumsum(-1) >= 1
 
     batch_loss = 0.0
     total_lambda = 0.0
@@ -115,6 +57,8 @@ class GFNPolicy(S2SWhisperGreedySearcher):
     def __init__(self, model, reward_model, **kwargs):
         super().__init__(model=model, **kwargs)
         self.reward_model = reward_model
+        self.reward_model.eval()
+        del self.reward_model.model.encoder
 
     def forward(
         self,
@@ -191,39 +135,40 @@ class GFNPolicy(S2SWhisperGreedySearcher):
             if torch.all(~active_seqs):
                 break
 
+        log_pf = torch.stack(log_pf, dim=1)
+        log_pterm = torch.stack(log_pterm, dim=1)
+
         if skip_reward:
             log_r, log_r_unpenalized = None, None
         else:
-            log_pf = torch.stack(log_pf, dim=1)
-            log_pterm = torch.stack(log_pterm, dim=1)
+            with torch.no_grad():
 
-            logits, _, _ = self.reward_model.forward_decoder(enc_states, state)
-            # get rid of the first few tokens
-            logits = logits[:, skip_first - 1 :]
-            # score the log probability of the input sequence while ignoring termination and padding tokens
-            logprob = logits.log_softmax(-1)
-            reward_token_ids = state[:, skip_first:].unsqueeze(-1)
-            logPF = logprob[:, :-1].gather(-1, reward_token_ids).squeeze(-1)
-            logP = logPF.cumsum(dim=-1)  # logP(generated[:i+1] | prompt)
-            reward = logprob[
-                :, :, self.eos_index
-            ]  # logP(generated[i+1]=term | prompt + generated[:i+1])
-            reward[:, 1:] += logP  # logP(generated[:i] + term | prompt)
-            non_term_mask = (state != self.eos_index)[:, skip_first:]
-            non_term_mask = torch.cat(
-                (
-                    non_term_mask.new_ones(non_term_mask.shape[0], 1),
-                    non_term_mask,
-                ),
-                dim=-1,
-            )  # Start (i.e., empty) state has never terminated
-            reward[~non_term_mask] = 0.0
-            log_r_unpenalized = reward.clone()
-            log_r = torch.where(non_term_mask.cumsum(dim=-1) - 1 < min_len, -99, reward)
+                logits, _, _ = self.reward_model.forward_decoder(enc_states, state)
+                # get rid of the first few tokens
+                logits = logits[:, skip_first - 1 :]
+                # score the log probability of the input sequence while ignoring termination and padding tokens
+                logprob = logits.log_softmax(-1)
+                reward_token_ids = state[:, skip_first:].unsqueeze(-1)
+                logPF = logprob[:, :-1].gather(-1, reward_token_ids).squeeze(-1)
+                logP = logPF.cumsum(dim=-1)  # logP(generated[:i+1] | prompt)
+                reward = logprob[
+                    :, :, self.eos_index
+                ]  # logP(generated[i+1]=term | prompt + generated[:i+1])
+                reward[:, 1:] += logP  # logP(generated[:i] + term | prompt)
+                non_term_mask = (state != self.eos_index)[:, skip_first:]
+                non_term_mask = torch.cat(
+                    (
+                        non_term_mask.new_ones(non_term_mask.shape[0], 1),
+                        non_term_mask,
+                    ),
+                    dim=-1,
+                )  # Start (i.e., empty) state has never terminated
+                reward[~non_term_mask] = 0.0
+                log_r_unpenalized = reward.clone()
+                log_r = torch.where(non_term_mask.cumsum(dim=-1) - 1 < min_len, -99, reward)
 
         # add termination token 
         state = torch.cat([state[:, skip_first:], token_ids], dim=-1)
-        breakpoint()
         return state, log_pf, log_pterm, log_r, log_r_unpenalized
 
     def forward_step(self, inp_tokens, memory, enc_states, enc_lens):

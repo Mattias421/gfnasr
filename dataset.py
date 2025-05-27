@@ -90,6 +90,8 @@ class HDF5Dataset(Dataset):
 
                     wav_len = f["wav_lens"][idx]
                     wav_len = torch.tensor(wav_len, dtype=torch.long)
+
+                    transcript = f["transcripts"][idx].decode('utf-8')
                 except Exception as e:
                     print(f"Warning: Could not load path info for index {idx}: {e}")
                     path_info = "ErrorLoadingPath"
@@ -105,6 +107,6 @@ class HDF5Dataset(Dataset):
 
         if path_info is not None:
             path_info = Path(path_info).stem
-            return embedding_tensor, path_info, wav_len # Return embedding and its original path
+            return embedding_tensor, path_info, wav_len, transcript # Return embedding and its original path
         else:
             return embedding_tensor # Just return the embedding
