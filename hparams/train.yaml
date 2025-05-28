@@ -14,7 +14,7 @@ save_folder: !ref <output_folder>/save
 
 # URL for the whisper model
 whisper_hub: openai/whisper-tiny
-whisper_folder: !ref <save_folder>/whisper_checkpoint
+whisper_folder: !ref pretrained_models/whisper_checkpoint
 
 # Normalize the english inputs with
 # the same normalization done in the paper
@@ -29,9 +29,6 @@ freeze_encoder: True
 number_of_epochs: 1
 weight_decay: 0.01
 lr_whisper: 1e-5
-warmup_steps: 500
-max_grad_norm: 2.0
-sorting: ascending
 precision: fp16 # bf16, fp16 or fp32
 eval_precision: fp16
 sampling_rate: 16_000
@@ -39,9 +36,9 @@ sampling_rate: 16_000
 # With data_parallel batch_size is split into N jobs
 # With DDP batch_size is multiplied by N jobs
 # This setup works well with 1x 32GB GPU
-batch_size: 2
-test_batch_size: 2
-grad_accumulation_factor: 8
+batch_size: 32
+test_batch_size: 32
+# grad_accumulation_factor: 8
 
 # Decoding parameters
 min_decode_ratio: 0.0
@@ -106,17 +103,12 @@ policy: !new:utils.GFNPolicy
 loss_fn: !name:utils.modified_subtb_loss
 reward_temperature: 1.0
 
-lr_annealing_whisper: !new:speechbrain.nnet.schedulers.NoamScheduler
-    lr_initial: !ref <lr_whisper>
-    n_warmup_steps: !ref <warmup_steps>
-
 ############################## Logging and Pretrainer ##########################
 
 checkpointer: !new:speechbrain.utils.checkpoints.Checkpointer
     checkpoints_dir: !ref <save_folder>
     recoverables:
         whisper: !ref <whisper>
-        scheduler_whisper: !ref <lr_annealing_whisper>
         counter: !ref <epoch_counter>
 
 train_logger: !new:speechbrain.utils.train_logger.WandBLogger
@@ -136,3 +128,5 @@ wer_metric: !new:speechbrain.utils.metric_stats.ErrorRateStats
 
 cer_metric: !new:speechbrain.utils.metric_stats.ErrorRateStats
     split_tokens: True
+
+evaluate: true

@@ -146,7 +146,8 @@ def process_audio_and_save_features(
         else:
             dims_map = {"tiny": 384, "base": 512, "small": 768, "medium": 1024, "large": 1280, "large-v2": 1280, "large-v3": 1280}
             clean_model_name = whisper_model_name.split('.')[0]
-            if clean_model_name in dims_map: embedding_dim = dims_map[clean_model_name]
+            if clean_model_name in dims_map:
+                embedding_dim = dims_map[clean_model_name]
             else:
                 print(f"Error: Could not determine embedding dimension for model '{whisper_model_name}'.")
                 sys.exit(1)

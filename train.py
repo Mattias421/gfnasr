@@ -94,6 +94,14 @@ class ASR(sb.Brain):
             for pred, i in zip(predicted_words, utt_id):
                 self.hypothesis.append(f"{' '.join(pred).upper()} ({i})\n")
 
+        else:
+
+            self.hparams.train_logger.log_stats(
+                stats_meta={"step": self.step},
+                train_stats={"loss_step": loss}
+            )
+            self.step += 1
+
         return loss
 
     def on_stage_start(self, stage, epoch):
@@ -119,14 +127,12 @@ class ASR(sb.Brain):
 
             stage_stats["WER"] = self.hparams.wer_metric.summarize("error_rate")
             stage_stats["CER"] = self.hparams.cer_metric.summarize("error_rate")
-            self.hparams.wer_metric.clear()
-            self.hparams.cer_metric.clear()
 
         # Perform end-of-iteration things, like annealing, logging, etc.
         if stage == sb.Stage.VALID:
-            lr = self.hparams.lr_annealing_whisper.current_lr
+            # lr = self.hparams.lr_annealing_whisper.current_lr
             self.hparams.train_logger.log_stats(
-                stats_meta={"epoch": epoch, "lr": lr},
+                stats_meta={"step_epoch": epoch},
                 train_stats=self.train_stats,
                 valid_stats=stage_stats,
             )
@@ -146,6 +152,8 @@ class ASR(sb.Brain):
                 ) as w:
                     self.hparams.wer_metric.write_stats(w)
 
+        self.hparams.wer_metric.clear()
+        self.hparams.cer_metric.clear()
 
 
 
@@ -194,6 +202,7 @@ if __name__ == "__main__":
     # We dynamically add the tokenizer to our brain class.
     # NB: This tokenizer corresponds to the one used for Whisper.
     asr_brain.tokenizer = tokenizer
+    asr_brain.step = 0 # assume starting from clean run
 
     # Training
     asr_brain.fit(
@@ -205,10 +214,11 @@ if __name__ == "__main__":
     )
 
     # Testing
-    os.makedirs(hparams["output_wer_folder"], exist_ok=True)
+    if hparams["evaluate"]:
+        os.makedirs(hparams["output_wer_folder"], exist_ok=True)
 
-    asr_brain.evaluate(
-        test_data,
-        test_loader_kwargs=hparams["test_loader_kwargs"],
-        min_key="WER",
-    )
+        asr_brain.evaluate(
+            test_data,
+            test_loader_kwargs=hparams["test_loader_kwargs"],
+            min_key="WER",
+        )
