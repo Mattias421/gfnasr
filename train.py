@@ -131,8 +131,9 @@ class ASR(sb.Brain):
         # Perform end-of-iteration things, like annealing, logging, etc.
         if stage == sb.Stage.VALID:
             # lr = self.hparams.lr_annealing_whisper.current_lr
+            lr = self.hparams.lr_annealing_whisper.current_lr
             self.hparams.train_logger.log_stats(
-                stats_meta={"step_epoch": epoch},
+                    stats_meta={"step_epoch": epoch, "lr":lr},
                 train_stats=self.train_stats,
                 valid_stats=stage_stats,
             )
