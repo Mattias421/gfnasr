@@ -10,6 +10,7 @@ wheels/
 .venv
 uv.lock
 
+pretrained_models/
 results/
 data/
 .null*
