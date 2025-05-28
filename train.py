@@ -45,10 +45,7 @@ class ASR(sb.Brain):
 
         state, log_probs, log_probs_term, log_reward, log_reward_unpenalized = self.hparams.policy(embeds, wav_lens / wav_lens.max(), skip_reward=skip_reward)
 
-
         return utt_id, state, log_probs, log_probs_term, log_reward, log_reward_unpenalized
-
-
 
     def compute_objectives(self, predictions, batch, stage):
         """Computes the loss NLL given predictions and targets."""
@@ -56,7 +53,7 @@ class ASR(sb.Brain):
         (utt_id, state, log_probs, log_probs_term, log_reward, log_reward_unpenalized) = predictions
 
         eos_index = self.hparams.policy.eos_index
-        log_reward *= 1 / self.hparams.reward_temperature
+        log_reward *= 1 / self.get_reward_temp_at_step()
         loss = self.hparams.loss_fn(log_probs, log_reward, log_probs_term, state, eos_index)
 
         if stage != sb.Stage.TRAIN:
@@ -97,7 +94,7 @@ class ASR(sb.Brain):
         else:
 
             self.hparams.train_logger.log_stats(
-                stats_meta={"step": self.step},
+                stats_meta={"step": self.optimizer_step},
                 train_stats={"loss_step": loss}
             )
             self.step += 1
@@ -133,7 +130,7 @@ class ASR(sb.Brain):
             # lr = self.hparams.lr_annealing_whisper.current_lr
             lr = self.hparams.lr_annealing_whisper.current_lr
             self.hparams.train_logger.log_stats(
-                    stats_meta={"step_epoch": epoch, "lr":lr},
+                    stats_meta={"step": self.optimizer_step, "lr":lr},
                 train_stats=self.train_stats,
                 valid_stats=stage_stats,
             )
@@ -155,6 +152,11 @@ class ASR(sb.Brain):
 
         self.hparams.wer_metric.clear()
         self.hparams.cer_metric.clear()
+
+    def get_reward_temp_at_step(self):
+        return self.hparams.reward_temp_start + (
+            self.hparams.reward_temp_end - self.hparams.reward_temp_start
+        ) * min(1, self.optimizer_step / self.hparams.reward_temp_horizon)
 
 
 
