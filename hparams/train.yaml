@@ -36,9 +36,9 @@ sampling_rate: 16_000
 # With data_parallel batch_size is split into N jobs
 # With DDP batch_size is multiplied by N jobs
 # This setup works well with 1x 32GB GPU
-batch_size: 32
-test_batch_size: 32
-# grad_accumulation_factor: 8
+batch_size: 8
+test_batch_size: 8
+grad_accumulation_factor: 2
 
 # Decoding parameters
 min_decode_ratio: 0.0
