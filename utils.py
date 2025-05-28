@@ -1,3 +1,4 @@
+import random
 import subprocess
 import torch
 from torch.distributions import Categorical
@@ -54,11 +55,19 @@ def modified_subtb_loss(
     return batch_loss
 
 class GFNPolicy(S2SWhisperGreedySearcher):
-    def __init__(self, model, reward_model, **kwargs):
+    def __init__(self, model, reward_model,
+        temp_high=2.0,
+        temp_low=0.5,
+        temp_prob=0.666,
+                 **kwargs):
         super().__init__(model=model, **kwargs)
         self.reward_model = reward_model
-        self.reward_model.eval()
+        self.reward_model.eval().cpu()
         del self.reward_model.model.encoder
+
+        self.temp_high = temp_high
+        self.temp_low = temp_low
+        self.temp_prob = temp_prob
 
     def forward(
         self,
@@ -66,11 +75,17 @@ class GFNPolicy(S2SWhisperGreedySearcher):
         wav_len,
         max_len=10,
         min_len=0,
-        temperature=1.0,
         action_seq=None,
         skip_reward=False,
         skip_first=4,
     ):
+        temperature = 1.0
+        if random.random() < self.temp_prob:  # With tempering
+                temperature = (
+                    random.random()
+                    * (self.temp_high - self.temp_low)
+                    + self.temp_low
+                )
         # generate and return the probability of terminating at every step
         enc_lens = torch.round(enc_states.shape[1] * wav_len).int()
         device = enc_states.device
@@ -142,7 +157,6 @@ class GFNPolicy(S2SWhisperGreedySearcher):
             log_r, log_r_unpenalized = None, None
         else:
             self.model.cpu()
-            torch.cuda.synchronize()
             self.reward_model.to(state.device)
             with torch.no_grad():
 
@@ -171,7 +185,6 @@ class GFNPolicy(S2SWhisperGreedySearcher):
                 log_r = torch.where(non_term_mask.cumsum(dim=-1) - 1 < min_len, -99, reward)
 
             self.reward_model.cpu()
-            torch.cuda.synchronize()
             self.model.to(state.device)
 
         # add termination token 
