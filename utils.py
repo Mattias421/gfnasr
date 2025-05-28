@@ -141,9 +141,9 @@ class GFNPolicy(S2SWhisperGreedySearcher):
         if skip_reward:
             log_r, log_r_unpenalized = None, None
         else:
-            self.model.cpu()
-            torch.cuda.synchronize()
-            self.reward_model.to(state.device)
+            #self.model.cpu()
+            #torch.cuda.synchronize()
+            #self.reward_model.to(state.device)
             with torch.no_grad():
 
                 logits, _, _ = self.reward_model.forward_decoder(enc_states, state)
@@ -170,9 +170,9 @@ class GFNPolicy(S2SWhisperGreedySearcher):
                 log_r_unpenalized = reward.clone()
                 log_r = torch.where(non_term_mask.cumsum(dim=-1) - 1 < min_len, -99, reward)
 
-            self.reward_model.cpu()
-            torch.cuda.synchronize()
-            self.model.to(state.device)
+            #self.reward_model.cpu()
+            #torch.cuda.synchronize()
+            #self.model.to(state.device)
 
         # add termination token 
         state = torch.cat([state[:, skip_first:], token_ids], dim=-1)

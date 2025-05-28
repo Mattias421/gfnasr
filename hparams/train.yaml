@@ -30,8 +30,8 @@ number_of_epochs: 1
 weight_decay: 0.01
 lr_whisper: 1e-5
 warmup_steps: 500
-precision: fp16 # bf16, fp16 or fp32
-eval_precision: fp16
+#precision: fp16 # bf16, fp16 or fp32
+#eval_precision: fp16
 sampling_rate: 16_000
 
 # With data_parallel batch_size is split into N jobs
@@ -102,7 +102,7 @@ policy: !new:utils.GFNPolicy
     temperature: 1.0
 
 loss_fn: !name:utils.modified_subtb_loss
-reward_temperature: 1.0
+reward_temperature: 0.8
 
 lr_annealing_whisper: !new:speechbrain.nnet.schedulers.NoamScheduler
     lr_initial: !ref <lr_whisper>
