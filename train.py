@@ -43,7 +43,12 @@ class ASR(sb.Brain):
 
         skip_reward = False # (stage == sb.Stage.TEST)
 
-        state, log_probs, log_probs_term, log_reward, log_reward_unpenalized = self.hparams.policy(embeds, wav_lens / wav_lens.max(), skip_reward=skip_reward)
+        if stage != sb.Stage.TRAIN:
+          temperature = 1.0
+        else:
+          temperature = None
+
+        state, log_probs, log_probs_term, log_reward, log_reward_unpenalized = self.hparams.policy(embeds, wav_lens / wav_lens.max(), temperature=temperature, skip_reward=skip_reward)
 
         return utt_id, state, log_probs, log_probs_term, log_reward, log_reward_unpenalized
 
@@ -91,13 +96,6 @@ class ASR(sb.Brain):
             for pred, i in zip(predicted_words, utt_id):
                 self.hypothesis.append(f"{' '.join(pred).upper()} ({i})\n")
 
-        else:
-
-            self.hparams.train_logger.log_stats(
-                stats_meta={"step": self.optimizer_step},
-                train_stats={"loss_step": loss}
-            )
-            self.step += 1
 
         return loss
 
@@ -153,6 +151,36 @@ class ASR(sb.Brain):
         self.hparams.wer_metric.clear()
         self.hparams.cer_metric.clear()
 
+    def on_fit_batch_end(self, batch, outputs, loss, should_step):
+        """Called after ``fit_batch()``.
+
+        Arguments
+        ---------
+        batch : list of torch.Tensors
+            Batch of data to use for training. Default implementation assumes
+            this batch has two elements: inputs and targets.
+        outputs : list or dictionary of torch.Tensors
+            Returned value of compute_forward().
+        loss : torch.Tensor
+            Returned value of compute_objectives().
+        should_step : boolean
+            Whether optimizer.step() was called or not.
+        """
+        
+        #if should_step:
+          # total_norm = 0
+          # for p in self.modules.whisper.parameters():
+          #     print(p)
+          #     param_norm = p.grad.detach().data.norm(2)
+          #     total_norm += param_norm.item() ** 2
+          # total_norm = total_norm ** 0.5
+
+        self.hparams.train_logger.log_stats(
+            stats_meta={"step": self.optimizer_step},
+            train_stats={"loss_step": loss}
+        )
+
+
     def get_reward_temp_at_step(self):
         return self.hparams.reward_temp_start + (
             self.hparams.reward_temp_end - self.hparams.reward_temp_start
@@ -205,7 +233,6 @@ if __name__ == "__main__":
     # We dynamically add the tokenizer to our brain class.
     # NB: This tokenizer corresponds to the one used for Whisper.
     asr_brain.tokenizer = tokenizer
-    asr_brain.step = 0 # assume starting from clean run
 
     # Training
     asr_brain.fit(

@@ -37,9 +37,10 @@ sampling_rate: 16_000
 # With data_parallel batch_size is split into N jobs
 # With DDP batch_size is multiplied by N jobs
 # This setup works well with 1x 32GB GPU
-batch_size: 8
-test_batch_size: 8
-grad_accumulation_factor: 2
+batch_size: 16
+test_batch_size: 16
+#grad_accumulation_factor: 2
+skip_nonfinite_grads: true
 
 # Decoding parameters
 min_decode_ratio: 0.0
@@ -102,7 +103,7 @@ policy: !new:utils.GFNPolicy
 
 loss_fn: !name:utils.modified_subtb_loss
 
-reward_temp_start: 1.0
+reward_temp_start: 0.99
 reward_temp_end: 0.8
 reward_temp_horizon: 750
 

@@ -56,7 +56,7 @@ def modified_subtb_loss(
 
 class GFNPolicy(S2SWhisperGreedySearcher):
     def __init__(self, model, reward_model,
-        temp_high=2.0,
+        temp_high=1.0,
         temp_low=0.5,
         temp_prob=0.666,
                  **kwargs):
@@ -73,19 +73,19 @@ class GFNPolicy(S2SWhisperGreedySearcher):
         self,
         enc_states,
         wav_len,
-        max_len=10,
-        min_len=0,
+        temperature=None,
         action_seq=None,
         skip_reward=False,
         skip_first=4,
     ):
-        temperature = 1.0
-        if random.random() < self.temp_prob:  # With tempering
+        if random.random() < self.temp_prob and temperature is None:  # With tempering
                 temperature = (
                     random.random()
                     * (self.temp_high - self.temp_low)
                     + self.temp_low
                 )
+        elif temperature is None:
+          temperature = 1.0
         # generate and return the probability of terminating at every step
         enc_lens = torch.round(enc_states.shape[1] * wav_len).int()
         device = enc_states.device
@@ -147,7 +147,7 @@ class GFNPolicy(S2SWhisperGreedySearcher):
                 )
             )
             # check if all sequences have terminated
-            if torch.all(~active_seqs):
+            if torch.all(~active_seqs) or self._check_end_condition(state):
                 break
 
         log_pf = torch.stack(log_pf, dim=1)
