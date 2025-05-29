@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "editdistance>=0.8.1",
     "h5py>=3.13.0",
     "librosa>=0.11.0",
     "openai-whisper>=20240930",

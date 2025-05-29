@@ -30,9 +30,13 @@ from speechbrain.utils.data_utils import undo_padding
 from speechbrain.utils.distributed import if_main_process, run_on_main
 from speechbrain.utils.logger import get_logger
 
+from utils import ReplayBuffer
+import random
+
 from dataset import HDF5Dataset
 
 logger = get_logger(__name__)
+
 
 # Define training procedure
 class ASR(sb.Brain):
@@ -41,25 +45,70 @@ class ASR(sb.Brain):
         embeds, utt_id, wav_lens, refs = batch
         embeds = embeds.to(self.device)
 
-        skip_reward = False # (stage == sb.Stage.TEST)
+        skip_reward = False  # (stage == sb.Stage.TEST)
 
         if stage != sb.Stage.TRAIN:
-          temperature = 1.0
+            temperature = 1.0
         else:
-          temperature = None
+            temperature = None
 
-        state, log_probs, log_probs_term, log_reward, log_reward_unpenalized = self.hparams.policy(embeds, wav_lens / wav_lens.max(), temperature=temperature, skip_reward=skip_reward)
+        if random.random() < self.hparams.use_buffer_prob and self.hparams.replay_buffer.sample(len(utt_id), list(utt_id), self.device)[0] is not None:
 
-        return utt_id, state, log_probs, log_probs_term, log_reward, log_reward_unpenalized
+            action_seq, log_r = self.hparams.replay_buffer.sample(
+                len(utt_id), list(utt_id), self.device
+            )
+            print(action_seq)
+            state, log_probs, log_probs_term, log_reward, log_reward_unpenalized = (
+                self.hparams.policy(
+                    embeds,
+                    wav_lens / wav_lens.max(),
+                    temperature=1.0,
+                    action_seq=action_seq,
+                    skip_reward=skip_reward,
+                )
+            )
+        else:
+            state, log_probs, log_probs_term, log_reward, log_reward_unpenalized = (
+                self.hparams.policy(
+                    embeds,
+                    wav_lens / wav_lens.max(),
+                    temperature=temperature,
+                    skip_reward=skip_reward,
+                )
+            )
+
+            if stage == sb.Stage.TRAIN:
+                self.hparams.replay_buffer.add_batch(
+                    utt_ids=utt_id, generated_sentences=state, full_logrewards_batch=log_reward
+                )
+                print(len(self.hparams.replay_buffer))
+
+        return (
+            utt_id,
+            state,
+            log_probs,
+            log_probs_term,
+            log_reward,
+            log_reward_unpenalized,
+        )
 
     def compute_objectives(self, predictions, batch, stage):
         """Computes the loss NLL given predictions and targets."""
 
-        (utt_id, state, log_probs, log_probs_term, log_reward, log_reward_unpenalized) = predictions
+        (
+            utt_id,
+            state,
+            log_probs,
+            log_probs_term,
+            log_reward,
+            log_reward_unpenalized,
+        ) = predictions
 
         eos_index = self.hparams.policy.eos_index
         log_reward *= 1 / self.get_reward_temp_at_step()
-        loss = self.hparams.loss_fn(log_probs, log_reward, log_probs_term, state, eos_index)
+        loss = self.hparams.loss_fn(
+            log_probs, log_reward, log_probs_term, state, eos_index
+        )
 
         if stage != sb.Stage.TRAIN:
             # Decode token terms to words
@@ -72,7 +121,6 @@ class ASR(sb.Brain):
             _, _, _, target_words = batch
 
             if hasattr(self.hparams, "normalized_transcripts"):
-
                 if hasattr(self.tokenizer, "normalize"):
                     normalized_fn = self.tokenizer.normalize
                 else:
@@ -82,20 +130,20 @@ class ASR(sb.Brain):
                     normalized_fn(text).split(" ") for text in predicted_words
                 ]
 
-                target_words = [
-                    normalized_fn(text).split(" ") for text in target_words
-                ]
+                target_words = [normalized_fn(text).split(" ") for text in target_words]
             else:
                 predicted_words = [text.split(" ") for text in predicted_words]
                 target_words = [text.split(" ") for text in target_words]
 
-            self.hparams.wer_metric.append(ids=utt_id, predict=predicted_words, target=target_words)
-            self.hparams.cer_metric.append(ids=utt_id, predict=predicted_words, target=target_words)
-
+            self.hparams.wer_metric.append(
+                ids=utt_id, predict=predicted_words, target=target_words
+            )
+            self.hparams.cer_metric.append(
+                ids=utt_id, predict=predicted_words, target=target_words
+            )
 
             for pred, i in zip(predicted_words, utt_id):
                 self.hypothesis.append(f"{' '.join(pred).upper()} ({i})\n")
-
 
         return loss
 
@@ -117,7 +165,7 @@ class ASR(sb.Brain):
                 hyps_file = Path(self.hparams.output_folder) / "test_hyps.trn"
 
             if if_main_process():
-                with open(hyps_file, 'w') as f:
+                with open(hyps_file, "w") as f:
                     f.writelines(self.hypothesis)
 
             stage_stats["WER"] = self.hparams.wer_metric.summarize("error_rate")
@@ -128,7 +176,7 @@ class ASR(sb.Brain):
             # lr = self.hparams.lr_annealing_whisper.current_lr
             lr = self.hparams.lr_annealing_whisper.current_lr
             self.hparams.train_logger.log_stats(
-                    stats_meta={"step": self.optimizer_step, "lr":lr},
+                stats_meta={"step": self.optimizer_step, "lr": lr},
                 train_stats=self.train_stats,
                 valid_stats=stage_stats,
             )
@@ -143,9 +191,7 @@ class ASR(sb.Brain):
             )
             if if_main_process():
                 file = Path(self.hparams.output_folder) / "test_wer.txt"
-                with open(
-                        file, "w", encoding="utf-8"
-                ) as w:
+                with open(file, "w", encoding="utf-8") as w:
                     self.hparams.wer_metric.write_stats(w)
 
         self.hparams.wer_metric.clear()
@@ -166,26 +212,23 @@ class ASR(sb.Brain):
         should_step : boolean
             Whether optimizer.step() was called or not.
         """
-        
-        #if should_step:
-          # total_norm = 0
-          # for p in self.modules.whisper.parameters():
-          #     print(p)
-          #     param_norm = p.grad.detach().data.norm(2)
-          #     total_norm += param_norm.item() ** 2
-          # total_norm = total_norm ** 0.5
+
+        # if should_step:
+        # total_norm = 0
+        # for p in self.modules.whisper.parameters():
+        #     print(p)
+        #     param_norm = p.grad.detach().data.norm(2)
+        #     total_norm += param_norm.item() ** 2
+        # total_norm = total_norm ** 0.5
 
         self.hparams.train_logger.log_stats(
-            stats_meta={"step": self.optimizer_step},
-            train_stats={"loss_step": loss}
+            stats_meta={"step": self.optimizer_step}, train_stats={"loss_step": loss}
         )
-
 
     def get_reward_temp_at_step(self):
         return self.hparams.reward_temp_start + (
             self.hparams.reward_temp_end - self.hparams.reward_temp_start
         ) * min(1, self.optimizer_step / self.hparams.reward_temp_horizon)
-
 
 
 if __name__ == "__main__":
@@ -205,7 +248,6 @@ if __name__ == "__main__":
         overrides=overrides,
     )
 
-
     # Defining tokenizer and loading it
     tokenizer = hparams["whisper"].tokenizer
 
@@ -213,6 +255,8 @@ if __name__ == "__main__":
     train_data = HDF5Dataset(hparams["train_data_path"])
     valid_data = HDF5Dataset(hparams["valid_data_path"])
     test_data = HDF5Dataset(hparams["test_data_path"])
+
+    train_data.num_samples = 210
 
     modules = hparams["modules"]
 
@@ -233,6 +277,9 @@ if __name__ == "__main__":
     # We dynamically add the tokenizer to our brain class.
     # NB: This tokenizer corresponds to the one used for Whisper.
     asr_brain.tokenizer = tokenizer
+
+    hparams["replay_buffer"].termination_token_id = hparams["policy"].eos_index
+    hparams["replay_buffer"].tokenizer = tokenizer
 
     # Training
     asr_brain.fit(

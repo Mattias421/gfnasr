@@ -101,6 +101,13 @@ policy: !new:utils.GFNPolicy
     min_decode_ratio: !ref <min_decode_ratio>
     max_decode_ratio: !ref <max_decode_ratio>
 
+use_buffer_prob: 0.25
+buffer_size: 50
+buffer_sim_tolerance: 0.25
+replay_buffer: !new:utils.ReplayBuffer
+    buffer_size: !ref <buffer_size>
+    sim_tolerance: !ref <buffer_sim_tolerance>
+
 loss_fn: !name:utils.modified_subtb_loss
 
 reward_temp_start: 0.99
@@ -119,6 +126,11 @@ checkpointer: !new:speechbrain.utils.checkpoints.Checkpointer
         whisper: !ref <whisper>
         scheduler_whisper: !ref <lr_annealing_whisper>
         counter: !ref <epoch_counter>
+        replay_buffer: !ref <replay_buffer>
+    custom_load_hooks:
+      replay_buffer: !name:utils.buffer_load
+    custom_save_hooks:
+      replay_buffer: !name:utils.buffer_save
 
 train_logger: !new:speechbrain.utils.train_logger.WandBLogger
     initializer: !name:wandb.init
