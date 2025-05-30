@@ -254,6 +254,8 @@ if __name__ == "__main__":
     valid_data = HDF5Dataset(hparams["valid_data_path"])
     test_data = HDF5Dataset(hparams["test_data_path"])
 
+    del hparams["whisper"].adapted_model.model.encoder
+
     modules = hparams["modules"]
 
     # Trainer initialization
