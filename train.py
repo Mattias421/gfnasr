@@ -171,10 +171,8 @@ class ASR(sb.Brain):
 
         # Perform end-of-iteration things, like annealing, logging, etc.
         if stage == sb.Stage.VALID:
-            # lr = self.hparams.lr_annealing_whisper.current_lr
-            lr = self.hparams.lr_annealing_whisper.current_lr
             self.hparams.train_logger.log_stats(
-                stats_meta={"step": self.optimizer_step, "lr": lr},
+                stats_meta={"step": self.optimizer_step},
                 train_stats=self.train_stats,
                 valid_stats=stage_stats,
             )
@@ -219,9 +217,13 @@ class ASR(sb.Brain):
         #     total_norm += param_norm.item() ** 2
         # total_norm = total_norm ** 0.5
 
-        self.hparams.train_logger.log_stats(
-            stats_meta={"step": self.optimizer_step}, train_stats={"loss_step": loss}
-        )
+        if should_step:
+            lr = self.hparams.lr_annealing_whisper.current_lr
+            self.hparams.lr_annealing_whisper(self.optimizer)
+
+            self.hparams.train_logger.log_stats(
+                    stats_meta={"step": self.optimizer_step, "lr":lr}, train_stats={"loss_step": loss}
+            )
 
     def get_reward_temp_at_step(self):
         return self.hparams.reward_temp_start + (
