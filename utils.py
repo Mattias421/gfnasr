@@ -176,44 +176,6 @@ class GFNPolicy(S2SWhisperGreedySearcher):
 
         # compute reward
 
-        # log_pf = torch.stack(log_pf, dim=1)
-        # log_pterm = torch.stack(log_pterm, dim=1)
-        #
-        # if skip_reward:
-        #     log_r, log_r_unpenalized = None, None
-        # else:
-        #     self.model.cpu()
-        #     self.reward_model.to(state.device)
-        #     with torch.no_grad():
-        #         logits, _, _ = self.reward_model.forward_decoder(enc_states, state)
-        #         # get rid of the first few tokens
-        #         logits = logits[:, skip_first - 1 :]
-        #         # score the log probability of the input sequence while ignoring termination and padding tokens
-        #         logprob = logits.log_softmax(-1)
-        #         reward_token_ids = state[:, skip_first:].unsqueeze(-1)
-        #         logPF = logprob[:, :-1].gather(-1, reward_token_ids).squeeze(-1)
-        #         logP = logPF.cumsum(dim=-1)  # logP(generated[:i+1] | prompt)
-        #         reward = logprob[
-        #             :, :, self.eos_index
-        #         ]  # logP(generated[i+1]=term | prompt + generated[:i+1])
-        #         reward[:, 1:] += logP  # logP(generated[:i] + term | prompt)
-        #         non_term_mask = (state != self.eos_index)[:, skip_first:]
-        #         non_term_mask = torch.cat(
-        #             (
-        #                 non_term_mask.new_ones(non_term_mask.shape[0], 1),
-        #                 non_term_mask,
-        #             ),
-        #             dim=-1,
-        #         )  # Start (i.e., empty) state has never terminated
-        #         reward[~non_term_mask] = 0.0
-        #         log_r_unpenalized = reward.clone()
-        #         log_r = torch.where(
-        #             non_term_mask.cumsum(dim=-1) - 1 < min_len, -99, reward
-        #         )
-        #
-        #     self.reward_model.cpu()
-        #     self.model.to(state.device)
-
         log_pf = torch.stack(log_pf, dim=1)
         log_pterm = torch.stack(log_pterm, dim=1)
 
