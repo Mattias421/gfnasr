@@ -103,7 +103,7 @@ class ASR(sb.Brain):
         ) = predictions
 
         eos_index = self.hparams.policy.eos_index
-        log_reward *= 1 / self.get_reward_temp_at_step()
+        # log_reward *= 1 / self.get_reward_temp_at_step()
         loss = self.hparams.loss_fn(
             log_probs, log_reward, log_probs_term, state, eos_index
         )
@@ -253,8 +253,6 @@ if __name__ == "__main__":
     train_data = HDF5Dataset(hparams["train_data_path"])
     valid_data = HDF5Dataset(hparams["valid_data_path"])
     test_data = HDF5Dataset(hparams["test_data_path"])
-
-    train_data.num_samples = 210
 
     modules = hparams["modules"]
 
