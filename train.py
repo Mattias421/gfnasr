@@ -103,7 +103,7 @@ class ASR(sb.Brain):
         ) = predictions
 
         eos_index = self.hparams.policy.eos_index
-        log_reward *= 1 / self.get_reward_temp_at_step()
+        # log_reward *= 1 / self.get_reward_temp_at_step()
         loss = self.hparams.loss_fn(
             log_probs, log_reward, log_probs_term, state, eos_index
         )
