@@ -31,7 +31,7 @@ weight_decay: 0.01
 lr_whisper: 1e-5
 warmup_steps: 500
 #precision: fp16 # bf16, fp16 or fp32
-#eval_precision: fp16
+eval_precision: fp16
 sampling_rate: 16_000
 
 # With data_parallel batch_size is split into N jobs
@@ -44,7 +44,7 @@ skip_nonfinite_grads: true
 
 # Decoding parameters
 min_decode_ratio: 0.0
-max_decode_ratio: 1.0
+max_decode_ratio: 0.1
 test_beam_size: 8
 
 # Lora configuration

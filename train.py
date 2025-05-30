@@ -254,7 +254,7 @@ if __name__ == "__main__":
     valid_data = HDF5Dataset(hparams["valid_data_path"])
     test_data = HDF5Dataset(hparams["test_data_path"])
 
-    train_data.num_samples = 210
+    del hparams["whisper"].adapted_model.model.encoder
 
     modules = hparams["modules"]
 
