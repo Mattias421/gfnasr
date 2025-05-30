@@ -80,6 +80,7 @@ class GFNPolicy(S2SWhisperGreedySearcher):
         self,
         enc_states,
         wav_len,
+        target_words,
         temperature=None,
         action_seq=None,
         skip_reward=False,
@@ -212,30 +213,35 @@ class GFNPolicy(S2SWhisperGreedySearcher):
         #
         #     self.reward_model.cpu()
         #     self.model.to(state.device)
-        breakpoint()
-        predicted_words = [
-            self.tokenizer.decode(t, skip_special_tokens=True).strip()
-            for t in state
-        ]
 
-        # Convert indices to words
-        _, _, _, target_words = batch
+        log_pf = torch.stack(log_pf, dim=1)
+        log_pterm = torch.stack(log_pterm, dim=1)
 
-        if hasattr(self.hparams, "normalized_transcripts"):
-            if hasattr(self.tokenizer, "normalize"):
-                normalized_fn = self.tokenizer.normalize
-            else:
-                normalized_fn = self.tokenizer._normalize
+        normalized_fn = self.tokenizer.normalize
 
+        target_words = [normalized_fn(text).split(" ") for text in target_words]
+
+        log_r = torch.zeros_like(log_pf)
+        max_len = log_r.shape[-1]
+
+        for i in range(max_len):
+            predicted_words = [
+                self.tokenizer.decode(t, skip_special_tokens=True).strip()
+                for t in state[:, :i]
+            ]
             predicted_words = [
                 normalized_fn(text).split(" ") for text in predicted_words
             ]
-
-            target_words = [normalized_fn(text).split(" ") for text in target_words]
+            for j, sentence in enumerate(predicted_words):
+                if state[j,i] == self.eos_index:
+                    log_r[j,i] = -99
+                else:
+                    edit_dist = editdistance.eval(target_words[j], sentence)
+                    log_r[j,i] = np.log(len(sentence) / (edit_dist + 1e-9))
 
         # add termination token
         state = torch.cat([state[:, skip_first:], token_ids], dim=-1)
-        return state, log_pf, log_pterm, log_r, log_r_unpenalized
+        return state, log_pf, log_pterm, log_r
 
     def forward_step(self, inp_tokens, memory, enc_states, enc_lens):
         """Performs a step in the implemented beamsearcher."""

@@ -57,21 +57,22 @@ class ASR(sb.Brain):
             action_seq, log_r = self.hparams.replay_buffer.sample(
                 len(utt_id), list(utt_id), self.device
             )
-            print(action_seq)
-            state, log_probs, log_probs_term, log_reward, log_reward_unpenalized = (
+            state, log_probs, log_probs_term, log_reward = (
                 self.hparams.policy(
                     embeds,
                     wav_lens / wav_lens.max(),
+                    target_words=refs,
                     temperature=1.0,
                     action_seq=action_seq,
                     skip_reward=skip_reward,
                 )
             )
         else:
-            state, log_probs, log_probs_term, log_reward, log_reward_unpenalized = (
+            state, log_probs, log_probs_term, log_reward = (
                 self.hparams.policy(
                     embeds,
                     wav_lens / wav_lens.max(),
+                    target_words=refs,
                     temperature=temperature,
                     skip_reward=skip_reward,
                 )
@@ -81,7 +82,6 @@ class ASR(sb.Brain):
                 self.hparams.replay_buffer.add_batch(
                     utt_ids=utt_id, generated_sentences=state, full_logrewards_batch=log_reward
                 )
-                print(len(self.hparams.replay_buffer))
 
         return (
             utt_id,
@@ -89,7 +89,6 @@ class ASR(sb.Brain):
             log_probs,
             log_probs_term,
             log_reward,
-            log_reward_unpenalized,
         )
 
     def compute_objectives(self, predictions, batch, stage):
@@ -101,7 +100,6 @@ class ASR(sb.Brain):
             log_probs,
             log_probs_term,
             log_reward,
-            log_reward_unpenalized,
         ) = predictions
 
         eos_index = self.hparams.policy.eos_index
@@ -277,6 +275,7 @@ if __name__ == "__main__":
     # We dynamically add the tokenizer to our brain class.
     # NB: This tokenizer corresponds to the one used for Whisper.
     asr_brain.tokenizer = tokenizer
+    asr_brain.hparams.policy.tokenizer = tokenizer
 
     hparams["replay_buffer"].termination_token_id = hparams["policy"].eos_index
     hparams["replay_buffer"].tokenizer = tokenizer
