@@ -181,13 +181,15 @@ class GFNPolicy(S2SWhisperGreedySearcher):
 
         target_words = [normalized_fn(text).split(" ") for text in target_words]
 
+        # add termination token
+        state = torch.cat([state[:, skip_first:], token_ids], dim=-1)
+
         log_r = torch.zeros_like(log_pf)
         max_len = log_r.shape[-1]
-
         for i in range(max_len):
             predicted_words = [
                 self.tokenizer.decode(t, skip_special_tokens=True).strip()
-                for t in state[:, :i]
+                for t in state[:, :i+1]
             ]
             predicted_words = [
                 normalized_fn(text).split(" ") for text in predicted_words
@@ -198,8 +200,6 @@ class GFNPolicy(S2SWhisperGreedySearcher):
                 else:
                     log_r[j,i] = - editdistance.eval(target_words[j], sentence) / len(target_words[j])
 
-        # add termination token
-        state = torch.cat([state[:, skip_first:], token_ids], dim=-1)
         return state, log_pf, log_pterm, log_r
 
     def forward_step(self, inp_tokens, memory, enc_states, enc_lens):
