@@ -64,7 +64,6 @@ class GFNPolicy(S2SWhisperGreedySearcher):
     def __init__(
         self,
         model,
-        reward_model,
         temp_high=1.0,
         temp_low=0.5,
         temp_prob=0.666,
@@ -74,7 +73,6 @@ class GFNPolicy(S2SWhisperGreedySearcher):
         self.temp_high = temp_high
         self.temp_low = temp_low
         self.temp_prob = temp_prob
-        self.reward_model = reward_model
 
     def forward(
         self,
@@ -198,8 +196,7 @@ class GFNPolicy(S2SWhisperGreedySearcher):
                 if state[j,i] == self.eos_index:
                     log_r[j,i] = -99
                 else:
-                    edit_dist = editdistance.eval(target_words[j], sentence)
-                    log_r[j,i] = np.log(len(sentence) / (edit_dist + 1e-9))
+                    log_r[j,i] = - editdistance.eval(target_words[j], sentence) / len(target_words[j])
 
         # add termination token
         state = torch.cat([state[:, skip_first:], token_ids], dim=-1)

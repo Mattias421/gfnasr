@@ -44,7 +44,7 @@ skip_nonfinite_grads: true
 
 # Decoding parameters
 min_decode_ratio: 0.0
-max_decode_ratio: 0.1
+max_decode_ratio: 0.052 # about 78 tokens, increase if word deletions occur
 test_beam_size: 8
 
 # Lora configuration
@@ -95,9 +95,15 @@ whisper_opt_class: !name:torch.optim.AdamW
     lr: !ref <lr_whisper>
     weight_decay: !ref <weight_decay>
 
+policy_temp_high: 1.0
+policy_temp_low: 0.5
+policy_temp_prob: 0.666
+
 policy: !new:utils.GFNPolicy
     model: !ref <whisper>
-    reward_model: !ref <whisper_pretrained>
+    temp_high: !ref <policy_temp_high>
+    temp_low: !ref <policy_temp_low>
+    temp_prob: !ref <policy_temp_prob>
     min_decode_ratio: !ref <min_decode_ratio>
     max_decode_ratio: !ref <max_decode_ratio>
 
@@ -109,10 +115,6 @@ replay_buffer: !new:utils.ReplayBuffer
     sim_tolerance: !ref <buffer_sim_tolerance>
 
 loss_fn: !name:utils.modified_subtb_loss
-
-reward_temp_start: 0.99
-reward_temp_end: 0.8
-reward_temp_horizon: 750
 
 lr_annealing_whisper: !new:speechbrain.nnet.schedulers.NoamScheduler
     lr_initial: !ref <lr_whisper>
@@ -138,13 +140,14 @@ train_logger: !new:speechbrain.utils.train_logger.WandBLogger
         name: !ref <trial_id>
         dir: !ref <output_folder>/wandb
         config:
-            reward_temp_start: !ref <reward_temp_start>
-            reward_temp_end: !ref <reward_temp_end>
-            reward_temp_horizon: !ref <reward_temp_horizon>
+            policy_temp_high: !ref <policy_temp_high>
+            policy_temp_low: !ref <policy_temp_low>
+            policy_temp_prob: !ref <policy_temp_prob>
             lr_whisper: !ref <lr_whisper>
             batch_size: !ref <batch_size>
             weight_decay: !ref <weight_decay>
             lora_rank: !ref <lora_rank>
+            warmup_steps: !ref <warmup_steps>
 
 
 wer_metric: !new:speechbrain.utils.metric_stats.ErrorRateStats

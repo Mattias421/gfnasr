@@ -9,16 +9,18 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem-per-cpu=8G
 #SBATCH --output=results/slurm/%x-%a.out
-#SBATCH --array=0-4
+#SBATCH --array=0-3
 
-ARRAY=(1e-5 1e-6 1e-7 1e-8 1e-9) 
-export WANDB_TAGS=lr_sweep
-export WANDB_SWEEP_ID=flh0880a
+TEMP=(0.052 0.054 0.056 0.058)
+export WANDB_TAGS=decode_sweep
+#export WANDB_SWEEP_ID=j5c5vvnf
+#export CUDA_LAUNCH_BLOCKING=1
 
-val=${ARRAY[$SLURM_ARRAY_TASK_ID]}
+
+value=${TEMP[$SLURM_ARRAY_TASK_ID]}
 
 module load CUDA/12.4.0 
 
 source ./.venv/bin/activate
 
-python train.py hparams/train.yaml --trial_id=lr_$val --evaluate=false --lr_whisper=$val --warmup_steps=10 --number_of_epochs=20 --policy_temp_prob=0 --use_buffer_prob=0
+python train.py hparams/train.yaml --trial_id=decode_ratio_$value --max_decode_ratio=$value --evaluate=false --number_of_epochs=20
