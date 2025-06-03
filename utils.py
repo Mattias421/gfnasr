@@ -195,7 +195,7 @@ class GFNPolicy(S2SWhisperGreedySearcher):
                 normalized_fn(text).split(" ") for text in predicted_words
             ]
             for j, sentence in enumerate(predicted_words):
-                if state[j,i] == self.eos_index:
+                if state[j,i] == self.eos_index and state[j,i-1] == self.eos_index:
                     log_r[j,i] = -99
                 else:
                     log_r[j,i] = - editdistance.eval(target_words[j], sentence) / len(target_words[j])
