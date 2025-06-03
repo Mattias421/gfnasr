@@ -98,6 +98,7 @@ whisper_opt_class: !name:torch.optim.AdamW
 policy_temp_high: 1.0
 policy_temp_low: 0.5
 policy_temp_prob: 0.666
+reward_weight: 10
 
 policy: !new:utils.GFNPolicy
     model: !ref <whisper>
@@ -148,6 +149,7 @@ train_logger: !new:speechbrain.utils.train_logger.WandBLogger
             weight_decay: !ref <weight_decay>
             lora_rank: !ref <lora_rank>
             warmup_steps: !ref <warmup_steps>
+            reward_weight: !ref <reward_weight>
 
 
 wer_metric: !new:speechbrain.utils.metric_stats.ErrorRateStats

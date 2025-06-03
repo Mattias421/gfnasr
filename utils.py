@@ -19,6 +19,7 @@ def modified_subtb_loss(
     log_pterm,
     generated_text,
     termination_token_id,
+    reward_weight,
     subtb_lambda=1.0,
 ):
     assert (
@@ -35,10 +36,11 @@ def modified_subtb_loss(
         log_r[:, :-1]
         + log_pf[:, :-1]
         + log_pterm[:, 1:]
-        - log_r[:, 1:]
+        - log_r[:, 1:] * reward_weight
         - log_pterm[:, :-1]
     )
     delta_cumsum = torch.cat([torch.zeros_like(delta[:, :1]), delta], 1).cumsum(1)
+
 
     # Get a mask for tokens after the termination token in the generated_text
     mask = (generated_text[:, :-1] == termination_token_id).cumsum(-1) >= 1
