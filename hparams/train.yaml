@@ -29,7 +29,7 @@ freeze_encoder: True
 number_of_epochs: 1
 weight_decay: 0.01
 lr_whisper: 1e-5
-warmup_steps: 500
+warmup_steps: 1
 #precision: fp16 # bf16, fp16 or fp32
 eval_precision: fp16
 sampling_rate: 16_000
@@ -58,6 +58,7 @@ test_data_path: data/test.hdf5
 
 train_loader_kwargs:
     batch_size: !ref <batch_size>
+    shuffle: true
 
 valid_loader_kwargs:
     batch_size: !ref <test_batch_size>

@@ -33,14 +33,13 @@ def modified_subtb_loss(
     )  # With modified-style losses, we need at least one transition before terminating
 
     delta = (
-        log_r[:, :-1]
+        log_r[:, :-1] * reward_weight
         + log_pf[:, :-1]
         + log_pterm[:, 1:]
         - log_r[:, 1:] * reward_weight
         - log_pterm[:, :-1]
     )
     delta_cumsum = torch.cat([torch.zeros_like(delta[:, :1]), delta], 1).cumsum(1)
-
 
     # Get a mask for tokens after the termination token in the generated_text
     mask = (generated_text[:, :-1] == termination_token_id).cumsum(-1) >= 1
@@ -78,6 +77,7 @@ class GFNPolicy(S2SWhisperGreedySearcher):
 
     def forward(
         self,
+        gfn_model,
         enc_states,
         wav_len,
         target_words,
@@ -87,6 +87,7 @@ class GFNPolicy(S2SWhisperGreedySearcher):
         skip_first=4,
         ref_token_ids=None,
     ):
+
         if random.random() < self.temp_prob and temperature is None:  # With tempering
             temperature = (
                 random.random() * (self.temp_high - self.temp_low) + self.temp_low
@@ -117,7 +118,7 @@ class GFNPolicy(S2SWhisperGreedySearcher):
             if action_seq is None:
                 # generate action_seq from policy
                 logits, modified_logits, state, _ = self.forward_step(
-                    token_ids.squeeze(-1), state, enc_states, enc_lens
+                    gfn_model, token_ids.squeeze(-1), state, enc_states, enc_lens
                 )
 
                 with torch.no_grad():
@@ -138,7 +139,7 @@ class GFNPolicy(S2SWhisperGreedySearcher):
                 # use action seq from buffer
                 # TODO perhaps this could be taken outside of loop and have logits computed at once for faster training?
                 state = _update_mem(token_ids.squeeze(-1), state)
-                logits, attn, kv = self.model.forward_decoder(
+                logits, attn, kv = gfn_model.forward_decoder(
                     enc_states, state, past_key_values=self.kv_cache
                 )
                 logits = logits[:,-1]
@@ -204,11 +205,11 @@ class GFNPolicy(S2SWhisperGreedySearcher):
 
         return state, log_pf, log_pterm, log_r
 
-    def forward_step(self, inp_tokens, memory, enc_states, enc_lens):
+    def forward_step(self, gfn_model, inp_tokens, memory, enc_states, enc_lens):
         """Performs a step in the implemented beamsearcher."""
         tokens = _update_mem(inp_tokens, memory)
 
-        logits, attn, kv = self.model.forward_decoder(
+        logits, attn, kv = gfn_model.forward_decoder(
             enc_states, tokens, past_key_values=self.kv_cache
         )
 

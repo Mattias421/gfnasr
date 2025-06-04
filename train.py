@@ -59,6 +59,7 @@ class ASR(sb.Brain):
             )
             state, log_probs, log_probs_term, log_reward = (
                 self.hparams.policy(
+                    self.modules.whisper,
                     embeds,
                     wav_lens / wav_lens.max(),
                     target_words=refs,
@@ -70,6 +71,7 @@ class ASR(sb.Brain):
         else:
             state, log_probs, log_probs_term, log_reward = (
                 self.hparams.policy(
+                    self.modules.whisper,
                     embeds,
                     wav_lens / wav_lens.max(),
                     target_words=refs,
@@ -103,7 +105,7 @@ class ASR(sb.Brain):
         ) = predictions
 
         eos_index = self.hparams.policy.eos_index
-        # log_reward *= 1 / self.get_reward_temp_at_step()
+
         loss = self.hparams.loss_fn(
             log_probs, log_reward, log_probs_term, state, eos_index, self.hparams.reward_weight
         )
@@ -193,6 +195,42 @@ class ASR(sb.Brain):
         self.hparams.wer_metric.clear()
         self.hparams.cer_metric.clear()
 
+    def fit_batch(self, batch):
+        """Fit one batch, override to do multiple updates.
+        # ... (docstring) ...
+        """
+        should_step = (self.step % self.grad_accumulation_factor) == 0
+        self.on_fit_batch_start(batch, should_step)
+
+        with self.no_sync(not should_step): # Handles distributed training sync
+            with self.training_ctx: # Handles context like autocast for mixed precision
+                outputs = self.compute_forward(batch, sb.Stage.TRAIN)
+                loss = self.compute_objectives(outputs, batch, sb.Stage.TRAIN) # Regular loss
+
+            # Loss is scaled for gradient accumulation and mixed precision
+            scaled_loss = self.scaler.scale(
+                loss / self.grad_accumulation_factor
+            )
+            self.check_loss_isfinite(scaled_loss) # Good practice
+
+            scaled_loss.backward()
+
+
+        if should_step: # Only step optimizers if grad_accumulation is done
+            total_norm = 0
+            #self.hparams.lr_annealing_whisper(self.optimizer)
+            for name, param in self.modules.whisper.named_parameters():
+                if "adapter" in name:
+                    param_norm = param.grad.detach().data.norm(2)
+                    total_norm += param_norm.item() ** 2
+            total_norm = total_norm ** 0.5
+            self.total_norm = total_norm
+            # self.optimizers_step() will then unscale (if needed), clip, and step
+            self.optimizers_step()
+
+        self.on_fit_batch_end(batch, outputs, loss, should_step)
+        return loss.detach().cpu()
+
     def on_fit_batch_end(self, batch, outputs, loss, should_step):
         """Called after ``fit_batch()``.
 
@@ -219,10 +257,11 @@ class ASR(sb.Brain):
 
         if should_step:
             lr = self.hparams.lr_annealing_whisper.current_lr
-            self.hparams.lr_annealing_whisper(self.optimizer)
+            lr = self.hparams.lr_whisper
+
 
             self.hparams.train_logger.log_stats(
-                    stats_meta={"step": self.optimizer_step, "lr":lr}, train_stats={"loss_step": loss}
+                    stats_meta={"step": self.optimizer_step, "lr":lr}, train_stats={"loss_step": loss, "grad_norm":self.total_norm}
             )
 
     def get_reward_temp_at_step(self):
