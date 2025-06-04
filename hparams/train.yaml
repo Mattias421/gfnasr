@@ -99,7 +99,7 @@ whisper_opt_class: !name:torch.optim.AdamW
 policy_temp_high: 1.0
 policy_temp_low: 0.5
 policy_temp_prob: 0.666
-reward_weight: 10
+reward_weight: 1
 
 policy: !new:utils.GFNPolicy
     model: !ref <whisper>
