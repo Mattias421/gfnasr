@@ -41,6 +41,10 @@ def modified_subtb_loss(
     )
     delta_cumsum = torch.cat([torch.zeros_like(delta[:, :1]), delta], 1).cumsum(1)
 
+    print(log_r * reward_weight)
+    print(log_pf)
+    print(log_pterm)
+
     # Get a mask for tokens after the termination token in the generated_text
     mask = (generated_text[:, :-1] == termination_token_id).cumsum(-1) >= 1
 
@@ -133,8 +137,11 @@ class GFNPolicy(S2SWhisperGreedySearcher):
                         mask[self.eos_index] = False
                         modified_logits[:, mask] = -torch.inf
 
-                    prob = (modified_logits / temperature).softmax(dim=-1)
-                    token_ids = torch.multinomial(prob, num_samples=1)
+                    if temperature != 1.0:
+                        prob = (modified_logits / temperature).softmax(dim=-1)
+                        token_ids = torch.multinomial(prob, num_samples=1)
+                    else:
+                        token_ids = modified_logits.argmax(dim=-1)[:, None]
             else:
                 # use action seq from buffer
                 # TODO perhaps this could be taken outside of loop and have logits computed at once for faster training?
@@ -201,7 +208,9 @@ class GFNPolicy(S2SWhisperGreedySearcher):
                 if state[j,i] == self.eos_index and state[j,i-1] == self.eos_index:
                     log_r[j,i] = -1
                 else:
-                    log_r[j,i] = - editdistance.eval(target_words[j], sentence) / len(target_words[j])
+                    log_r[j,i] = - editdistance.eval(' '.join(target_words[j]), ' '.join(sentence)) / len(' '.join(target_words[j]))
+
+
 
         return state, log_pf, log_pterm, log_r
 
