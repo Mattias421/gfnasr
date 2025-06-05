@@ -45,7 +45,8 @@ skip_nonfinite_grads: true
 # Decoding parameters
 min_decode_ratio: 0.0
 max_decode_ratio: 0.052 # about 78 tokens, increase if word deletions occur
-test_beam_size: 8
+test_beam_size: 55
+topk: 55
 
 # Lora configuration
 lora_rank: 16
@@ -108,6 +109,14 @@ policy: !new:utils.GFNPolicy
     temp_prob: !ref <policy_temp_prob>
     min_decode_ratio: !ref <min_decode_ratio>
     max_decode_ratio: !ref <max_decode_ratio>
+
+beam_search: !new:speechbrain.decoders.seq2seq.S2SWhisperBeamSearcher
+  module: [!ref <whisper>]
+  min_decode_ratio: !ref <min_decode_ratio>
+  max_decode_ratio: !ref <max_decode_ratio>
+  beam_size: !ref <test_beam_size>
+  return_topk: true
+  topk: !ref <topk>
 
 use_buffer_prob: 0.25
 buffer_size: 50

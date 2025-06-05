@@ -85,6 +85,10 @@ class ASR(sb.Brain):
                     utt_ids=utt_id, generated_sentences=state, full_logrewards_batch=log_reward
                 )
 
+        if stage == sb.Stage.VALID:
+            hyps, lengths, scores, log_probs = self.hparams.beam_search(embeds, wav_lens)
+            breakpoint()
+
         return (
             utt_id,
             state,
