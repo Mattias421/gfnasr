@@ -44,7 +44,7 @@ skip_nonfinite_grads: true
 
 # Decoding parameters
 min_decode_ratio: 0.0
-max_decode_ratio: 0.052 # about 78 tokens, increase if word deletions occur
+max_decode_ratio: 0.5
 test_beam_size: 55
 topk: 55
 
@@ -162,8 +162,8 @@ train_logger: !new:speechbrain.utils.train_logger.WandBLogger
             reward_weight: !ref <reward_weight>
 
 
+ler_metric: !new:speechbrain.utils.metric_stats.ErrorRateStats
 wer_metric: !new:speechbrain.utils.metric_stats.ErrorRateStats
-
 cer_metric: !new:speechbrain.utils.metric_stats.ErrorRateStats
     split_tokens: True
 

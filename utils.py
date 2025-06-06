@@ -22,6 +22,8 @@ def modified_subtb_loss(
     reward_weight,
     subtb_lambda=1.0,
 ):
+    print(log_pf.shape)
+    print(log_r.shape)
     assert (
         log_pf.shape[1]
         == log_r.shape[1]

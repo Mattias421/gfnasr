@@ -33,6 +33,8 @@ from speechbrain.utils.logger import get_logger
 from utils import ReplayBuffer
 import random
 
+from speechbrain.utils.edit_distance import wer_details_for_batch
+
 from dataset import HDF5Dataset
 
 logger = get_logger(__name__)
@@ -87,7 +89,8 @@ class ASR(sb.Brain):
 
         if stage == sb.Stage.VALID:
             hyps, lengths, scores, log_probs = self.hparams.beam_search(embeds, wav_lens)
-            breakpoint()
+        else:
+            scores, hyps = None, None
 
         return (
             utt_id,
@@ -95,6 +98,8 @@ class ASR(sb.Brain):
             log_probs,
             log_probs_term,
             log_reward,
+            hyps,
+            scores,
         )
 
     def compute_objectives(self, predictions, batch, stage):
@@ -106,44 +111,49 @@ class ASR(sb.Brain):
             log_probs,
             log_probs_term,
             log_reward,
+            hyps,
+            scores,
         ) = predictions
+
+        _, _, _, target_words = batch
 
         eos_index = self.hparams.policy.eos_index
 
-        loss = self.hparams.loss_fn(
-            log_probs, log_reward, log_probs_term, state, eos_index, self.hparams.reward_weight
-        )
+        if stage == sb.Stage.TRAIN:
+            loss = self.hparams.loss_fn(
+                log_probs, log_reward, log_probs_term, state, eos_index, self.hparams.reward_weight
+            )
 
         if stage != sb.Stage.TRAIN:
+            predicted_best_words = []
+            predicted_oracle_words = []
+
+            target_words = [self.tokenizer.normalize(text).split(" ") for text in target_words]
+
             # Decode token terms to words
-            predicted_words = [
-                self.tokenizer.decode(t, skip_special_tokens=True).strip()
-                for t in state
-            ]
-
-            # Convert indices to words
-            _, _, _, target_words = batch
-
-            if hasattr(self.hparams, "normalized_transcripts"):
-                if hasattr(self.tokenizer, "normalize"):
-                    normalized_fn = self.tokenizer.normalize
-                else:
-                    normalized_fn = self.tokenizer._normalize
-
+            for i, n_best_list in enumerate(hyps):
                 predicted_words = [
-                    normalized_fn(text).split(" ") for text in predicted_words
+                    self.tokenizer.decode(t, skip_special_tokens=True).strip()
+                    for t in n_best_list
                 ]
+                predicted_words = [self.tokenizer.normalize(text).split(" ") for text in predicted_words]
+                self.all_generated_tokens += [*pw for pw in predicted_words]
 
-                target_words = [normalized_fn(text).split(" ") for text in target_words]
-            else:
-                predicted_words = [text.split(" ") for text in predicted_words]
-                target_words = [text.split(" ") for text in target_words]
+                wer_details = wer_details_for_batch(ids=list(range(0,len(n_best_list))), refs=[target_words[i]] * len(n_best_list), hyps=predicted_words)
 
+                predicted_best_words.append(predicted_words[0])
+                predicted_oracle_words.append(predicted_words[wer_details.index(min(wer_details))])
+
+
+
+            self.hparams.ler_metric.append(
+                ids=utt_id, predict=predicted_oracle_words, target=target_words
+            )
             self.hparams.wer_metric.append(
-                ids=utt_id, predict=predicted_words, target=target_words
+                ids=utt_id, predict=predicted_best_words, target=target_words
             )
             self.hparams.cer_metric.append(
-                ids=utt_id, predict=predicted_words, target=target_words
+                ids=utt_id, predict=predicted_best_words, target=target_words
             )
 
             for pred, i in zip(predicted_words, utt_id):
@@ -155,6 +165,7 @@ class ASR(sb.Brain):
         """Gets called at the beginning of each epoch"""
         if stage != sb.Stage.TRAIN:
             self.hypothesis = []
+            self.all_generated_tokens = []
 
     def on_stage_end(self, stage, stage_loss, epoch):
         """Gets called at the end of an epoch."""
@@ -172,8 +183,10 @@ class ASR(sb.Brain):
                 with open(hyps_file, "w") as f:
                     f.writelines(self.hypothesis)
 
+            stage_stats["LER"] = self.hparams.ler_metric.summarize("error_rate")
             stage_stats["WER"] = self.hparams.wer_metric.summarize("error_rate")
             stage_stats["CER"] = self.hparams.cer_metric.summarize("error_rate")
+            stage_stats["TTR"] = len(set(self.all_generated_tokens)) / len(self.all_generated_tokens)
 
         # Perform end-of-iteration things, like annealing, logging, etc.
         if stage == sb.Stage.VALID:
@@ -196,6 +209,7 @@ class ASR(sb.Brain):
                 with open(file, "w", encoding="utf-8") as w:
                     self.hparams.wer_metric.write_stats(w)
 
+        self.hparams.ler_metric.clear()
         self.hparams.wer_metric.clear()
         self.hparams.cer_metric.clear()
 
