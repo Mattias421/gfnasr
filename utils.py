@@ -22,8 +22,6 @@ def modified_subtb_loss(
     reward_weight,
     subtb_lambda=1.0,
 ):
-    print(log_pf.shape)
-    print(log_r.shape)
     assert (
         log_pf.shape[1]
         == log_r.shape[1]
@@ -70,12 +68,14 @@ class GFNPolicy(S2SWhisperGreedySearcher):
         temp_high=1.0,
         temp_low=0.5,
         temp_prob=0.666,
+        top_k=999999,
         **kwargs,
     ):
         super().__init__(model=model, **kwargs)
         self.temp_high = temp_high
         self.temp_low = temp_low
         self.temp_prob = temp_prob
+        self.top_k = top_k
 
     def forward(
         self,
@@ -229,26 +229,33 @@ class GFNPolicy(S2SWhisperGreedySearcher):
             self.no_speech_probs = probs_at_bos[:, self.model.no_speech].tolist()
 
         logits = logits[:, -1]
-        modified_logits = logits.clone().detach()
 
-        if self.use_kv_cache:
-            self.kv_cache = kv
+        with torch.no_grad():
+            modified_logits = logits.clone().detach()
 
-        if self.suppress_blank:
-            if tokens.shape[1] == self.sample_begin:
-                modified_logits[
-                    :,
-                    self.model.tokenizer.encode(" ", add_special_tokens=False)
-                    + [self.eos_index],
-                ] = -torch.inf
+            if self.use_kv_cache:
+                self.kv_cache = kv
 
-        if self.suppress_tokens:
-            if self.model.config.suppress_tokens is None:
-                tokens_to_suppress = self.get_tokens_to_suppress
-            else:
-                tokens_to_suppress = self.model.get_suppress_tokens
+            if self.suppress_blank:
+                if tokens.shape[1] == self.sample_begin:
+                    modified_logits[
+                        :,
+                        self.model.tokenizer.encode(" ", add_special_tokens=False)
+                        + [self.eos_index],
+                    ] = -torch.inf
 
-            modified_logits[:, list(tokens_to_suppress)] = -torch.inf
+            if self.suppress_tokens:
+                if self.model.config.suppress_tokens is None:
+                    tokens_to_suppress = self.get_tokens_to_suppress
+                else:
+                    tokens_to_suppress = self.model.get_suppress_tokens
+
+                modified_logits[:, list(tokens_to_suppress)] = -torch.inf
+
+            if self.top_k < 999999:
+                prob = modified_logits.softmax(dim=-1)
+                for b in modified_logits.shape[0]:
+                    modified_logits[prob >= prob.topk(self.top_k)] = -torch.inf
 
         return logits, modified_logits, tokens, attn
 

@@ -88,7 +88,7 @@ class ASR(sb.Brain):
                 )
 
         if stage == sb.Stage.VALID:
-            hyps, lengths, scores, log_probs = self.hparams.beam_search(embeds, wav_lens)
+            hyps, lengths, scores, model_log_probs = self.hparams.beam_search(embeds, wav_lens)
         else:
             scores, hyps = None, None
 
@@ -119,10 +119,9 @@ class ASR(sb.Brain):
 
         eos_index = self.hparams.policy.eos_index
 
-        if stage == sb.Stage.TRAIN:
-            loss = self.hparams.loss_fn(
-                log_probs, log_reward, log_probs_term, state, eos_index, self.hparams.reward_weight
-            )
+        loss = self.hparams.loss_fn(
+            log_probs, log_reward, log_probs_term, state, eos_index, self.hparams.reward_weight
+        )
 
         if stage != sb.Stage.TRAIN:
             predicted_best_words = []
@@ -137,9 +136,13 @@ class ASR(sb.Brain):
                     for t in n_best_list
                 ]
                 predicted_words = [self.tokenizer.normalize(text).split(" ") for text in predicted_words]
-                self.all_generated_tokens += [*pw for pw in predicted_words]
+                for pw in predicted_words:
+                    for t in pw:
+                        self.all_generated_tokens.append(t)
 
                 wer_details = wer_details_for_batch(ids=list(range(0,len(n_best_list))), refs=[target_words[i]] * len(n_best_list), hyps=predicted_words)
+                wer_details = [w['WER'] for w in wer_details]
+
 
                 predicted_best_words.append(predicted_words[0])
                 predicted_oracle_words.append(predicted_words[wer_details.index(min(wer_details))])
@@ -199,6 +202,11 @@ class ASR(sb.Brain):
                 meta={"WER": stage_stats["WER"]},
                 min_keys=["WER"],
             )
+
+            file = Path(self.hparams.output_folder) / f"valid_wer_{epoch}.txt"
+            with open(file, "w", encoding="utf-8") as w:
+                self.hparams.wer_metric.write_stats(w)
+
         elif stage == sb.Stage.TEST:
             self.hparams.train_logger.log_stats(
                 stats_meta={"Epoch loaded": self.hparams.epoch_counter.current},
