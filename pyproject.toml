@@ -9,6 +9,7 @@ dependencies = [
     "h5py>=3.13.0",
     "kenlm>=0.3.0",
     "librosa>=0.11.0",
+    "nltk>=3.9.1",
     "openai-whisper>=20240930",
     "soundfile>=0.13.1",
     "sox>=1.5.0",

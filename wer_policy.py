@@ -47,76 +47,112 @@ class ASR(sb.Brain):
         """Forward computations from the waveform batches to the output probabilities."""
         embeds, utt_id, wav_lens, refs = batch
 
-        n_err = 0
-        stack = refs[0]
-        ref = refs[0]
-        N = len(ref)
-        state = []
-        temperature = 1
-        breakpoint()
 
-        while ref != []:
-            logits = [n_err / N, (n_err+1)/N, (n_err+1)/N, (n_err+1)/N]
-            prob = (logits / temperature).softmax(dim=-1)
+        def _generate_word(context_word):
+            while True:
+                # Generate returns a list, so we take the first element
+                generated_word = self.bigram_lm.generate(1, text_seed=[context_word])
+                if generated_word != '</s>':
+                    return generated_word
 
-            match torch.multinomial(prob, num_samples=1):
-                case 0:
-                    # correct
-                    state.append(stack.pop(0))
-                case 1:
-                    # delete
-                    stack.pop(0)
-                case 2:
-                    # insert
-                    pass
+        states = []
 
-                case 3:
-                    # substitute
-                    pass
+        for ref in refs:
+            n_err = 0
+            stack = ref.split()
+            N = len(stack)
+            state = []
 
+            while stack:
+                logits = - torch.tensor([n_err, n_err+1, n_err+1, n_err+1]) / N
+                prob = (logits / self.hparams.policy_temp_low).softmax(dim=-1)
 
+                match torch.multinomial(prob, num_samples=1):
+                    case 0:
+                        # correct
+                        state.append(stack.pop(0))
+                    case 1:
+                        # delete
+                        stack.pop(0)
+                    case 2:
+                        # insert
+                        if state == []:
+                            state.append(_generate_word('</s>'))
+                        else:
+                            state.append(_generate_word(state[-1]))
+                    case 3:
+                        # substitute
+                        if state == []:
+                            state.append(_generate_word('</s>'))
+                            stack.pop(0)
+                        else:
+                            state.append(_generate_word(state[-1]))
+                            stack.pop(0)
+
+            states.append(state)
+
+        policy_outputs = [self.tokenizer.normalize(' '.join(text)) for text in states]
+        policy_tokens = [self.tokenizer.encode(text)[4:] for text in policy_outputs]
+
+        max_len = max(len(seq) for seq in policy_tokens)
+        padded_sequences = []
+        for seq in policy_tokens:
+            num_padding = max_len - len(seq)
+            # Create a new list with the original sequence + padding
+            padded_seq = seq + [self.hparams.policy.eos_index] * num_padding
+            padded_sequences.append(padded_seq)
+
+        action_seq = torch.tensor(padded_sequences).to(self.device)
 
         embeds = embeds.to(self.device)
 
         skip_reward = False  # (stage == sb.Stage.TEST)
 
-        if stage != sb.Stage.TRAIN:
-            temperature = 1.0
-        else:
-            temperature = None
-
-        if random.random() < self.hparams.use_buffer_prob and self.hparams.replay_buffer.sample(len(utt_id), list(utt_id), self.device)[0] is not None:
-
-            action_seq, log_r = self.hparams.replay_buffer.sample(
-                len(utt_id), list(utt_id), self.device
+        state, log_probs, log_probs_term, log_reward = (
+            self.hparams.policy(
+                self.modules.whisper,
+                embeds,
+                wav_lens / wav_lens.max(),
+                target_words=refs,
+                temperature=1.0,
+                action_seq=action_seq,
+                skip_reward=skip_reward,
             )
-            state, log_probs, log_probs_term, log_reward = (
-                self.hparams.policy(
-                    self.modules.whisper,
-                    embeds,
-                    wav_lens / wav_lens.max(),
-                    target_words=refs,
-                    temperature=1.0,
-                    action_seq=action_seq,
-                    skip_reward=skip_reward,
-                )
-            )
-        else:
-            state, log_probs, log_probs_term, log_reward = (
-                self.hparams.policy(
-                    self.modules.whisper,
-                    embeds,
-                    wav_lens / wav_lens.max(),
-                    target_words=refs,
-                    temperature=temperature,
-                    skip_reward=skip_reward,
-                )
-            )
+        )
+        breakpoint()
 
-            if stage == sb.Stage.TRAIN:
-                self.hparams.replay_buffer.add_batch(
-                    utt_ids=utt_id, generated_sentences=state, full_logrewards_batch=log_reward
-                )
+        # if random.random() < self.hparams.use_buffer_prob and self.hparams.replay_buffer.sample(len(utt_id), list(utt_id), self.device)[0] is not None:
+        #
+        #     action_seq, log_r = self.hparams.replay_buffer.sample(
+        #         len(utt_id), list(utt_id), self.device
+        #     )
+        #     state, log_probs, log_probs_term, log_reward = (
+        #         self.hparams.policy(
+        #             self.modules.whisper,
+        #             embeds,
+        #             wav_lens / wav_lens.max(),
+        #             target_words=refs,
+        #             temperature=1.0,
+        #             action_seq=action_seq,
+        #             skip_reward=skip_reward,
+        #         )
+        #     )
+        # else:
+        #     state, log_probs, log_probs_term, log_reward = (
+        #         self.hparams.policy(
+        #             self.modules.whisper,
+        #             embeds,
+        #             wav_lens / wav_lens.max(),
+        #             target_words=refs,
+        #             temperature=temperature,
+        #             skip_reward=skip_reward,
+        #         )
+        #     )
+        #
+        #     if stage == sb.Stage.TRAIN:
+        #         self.hparams.replay_buffer.add_batch(
+        #             utt_ids=utt_id, generated_sentences=state, full_logrewards_batch=log_reward
+        #         )
 
         if stage == sb.Stage.VALID:
             hyps, lengths, scores, model_log_probs = self.hparams.beam_search(embeds, wav_lens)
@@ -160,6 +196,7 @@ if __name__ == "__main__":
     valid_data = HDF5Dataset(hparams["valid_data_path"])
     test_data = HDF5Dataset(hparams["test_data_path"])
 
+
     del hparams["whisper"].adapted_model.model.encoder
 
     modules = hparams["modules"]
@@ -182,6 +219,14 @@ if __name__ == "__main__":
     # NB: This tokenizer corresponds to the one used for Whisper.
     asr_brain.tokenizer = tokenizer
     asr_brain.hparams.policy.tokenizer = tokenizer
+
+    # get train lm
+    from nltk.lm import MLE
+    from nltk.lm.preprocessing import padded_everygram_pipeline
+    train_txt, vocab = padded_everygram_pipeline(2, [x[-1].split(' ') for x in train_data])
+    asr_brain.bigram_lm = MLE(2)
+    asr_brain.bigram_lm.fit(train_txt, vocab)
+
 
     hparams["replay_buffer"].termination_token_id = hparams["policy"].eos_index
     hparams["replay_buffer"].tokenizer = tokenizer
